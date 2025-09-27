@@ -1,5 +1,5 @@
 {
-  "name": "Mesto backend project",
+  "name": "mesto",
   "version": "1.0.0",
   "description": "Barebone starter kit for Node.js projects using TypeScript and Express.",
   "main": "dist/app.js",

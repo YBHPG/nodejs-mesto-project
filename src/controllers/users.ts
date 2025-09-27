@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request as ExpressRequest, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import User from '../models/user';
@@ -12,132 +12,169 @@ const formatUser = (user: any) => ({
   _id: user._id,
 });
 
-export const getUsers = async (_req: Request, res: Response, next: NextFunction) => {
+export const getUsers = async (_req: ExpressRequest, res: Response, next: NextFunction) => {
   try {
     const users = await User.find({});
-    const formattedUsers = users.map(formatUser);
-    res.status(200).send(formattedUsers);
+    res.status(200).send(users.map(formatUser));
   } catch (err) {
     next(err);
   }
 };
 
-export const getUserById = async (req: Request, res: Response, next: NextFunction) => {
+export const getUserById = async (req: ExpressRequest, res: Response, next: NextFunction) => {
   try {
     const user = await User.findById(req.params.userId);
     if (!user) {
-      return next({ status: 404, message: 'Запрашиваемый пользователь не найден' });
+      const error = new Error('Запрашиваемый пользователь не найден');
+      (error as any).status = 404;
+      throw error;
     }
-    return res.status(200).send(formatUser(user));
+    res.status(200).send(formatUser(user));
   } catch (err: any) {
     if (err.name === 'CastError') {
-      return next({ status: 400, message: 'Передан некорректный _id пользователя' });
+      const error = new Error('Передан некорректный _id пользователя');
+      (error as any).status = 400;
+      next(error);
+    } else {
+      next(err);
     }
-    return next(err);
   }
 };
 
-export const createUser = async (req: Request, res: Response, next: NextFunction) => {
+export const createUser = async (req: ExpressRequest, res: Response, next: NextFunction) => {
   try {
-    const { name, about, avatar } = req.body;
-    const user = await User.create({ name, about, avatar });
-    return res.status(201).send(formatUser(user));
+    const {
+      name = 'Жак-Ив Кусто',
+      about = 'Исследователь',
+      avatar = 'https://pictures.s3.yandex.net/resources/avatar_1604080799.jpg',
+      email,
+      password,
+    } = req.body;
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = await User.create({
+      name, about, avatar, email, password: hashedPassword,
+    });
+    res.status(201).send(formatUser(
+      user,
+    ));
   } catch (err: any) {
     if (err.name === 'ValidationError') {
-      return next({ status: 400, message: 'Переданы некорректные данные при создании пользователя' });
+      const error = new Error('Переданы некорректные данные при создании пользователя');
+      (error as any).status = 400;
+      next(error);
+    } else if (err.code === 11000) {
+      const error = new Error('Пользователь с таким email уже существует');
+      (error as any).status = 409;
+      next(error);
+    } else {
+      next(err);
     }
-    // Проверка на ошибку дублирующего email (code 11000)
-    if (err.code === 11000) {
-      return next({ status: 409, message: 'Пользователь с таким email уже существует' });
-    }
-    return next(err);
   }
 };
 
-export const updateProfile = async (req: Request, res: Response, next: NextFunction) => {
+export const updateProfile = async (req: ExpressRequest, res: Response, next: NextFunction) => {
   try {
     const { name, about } = req.body;
     const user = await User.findByIdAndUpdate(
-      req.user?._id,
+      (req as any).user?._id,
       { name, about },
       { new: true, runValidators: true },
     );
     if (!user) {
-      return next({ status: 404, message: 'Запрашиваемый пользователь не найден' });
+      const error = new Error('Пользователь не найден');
+      (error as any).status = 404;
+      throw error;
     }
-    return res.status(200).send(formatUser(user));
+    res.status(200).send(formatUser(user));
   } catch (err: any) {
     if (err.name === 'ValidationError') {
-      return next({ status: 400, message: 'Переданы некорректные данные при обновлении профиля' });
+      const error = new Error('Переданы некорректные данные при обновлении профиля');
+      (error as any).status = 400;
+      next(error);
+    } else {
+      next(err);
     }
-    return next(err);
   }
 };
 
-export const updateAvatar = async (req: Request, res: Response, next: NextFunction) => {
+export const updateAvatar = async (req: ExpressRequest, res: Response, next: NextFunction) => {
   try {
     const { avatar } = req.body;
     const user = await User.findByIdAndUpdate(
-      req.user?._id,
+      (req as any).user?._id,
       { avatar },
       { new: true, runValidators: true },
     );
     if (!user) {
-      return next({ status: 404, message: 'Запрашиваемый пользователь не найден' });
+      const error = new Error('Пользователь не найден');
+      (error as any).status = 404;
+      throw error;
     }
-    return res.status(200).send(formatUser(user));
+    res.status(200).send(formatUser(user));
   } catch (err: any) {
     if (err.name === 'ValidationError') {
-      return next({ status: 400, message: 'Переданы некорректные данные при обновлении аватара' });
+      const error = new Error('Переданы некорректные данные при обновлении аватара');
+      (error as any).status = 400;
+      next(error);
+    } else {
+      next(err);
     }
-    return next(err);
   }
 };
 
-export const login = async (req: Request, res: Response, next: NextFunction) => {
+export const login = async (req: ExpressRequest, res: Response, next: NextFunction) => {
   try {
     const { email, password } = req.body;
 
-    // Находим пользователя по email с возвратом пароля
+    if (!email || !password) {
+      const error = new Error('Email и пароль обязательны');
+      (error as any).status = 400;
+      throw error;
+    }
+
     const user = await User.findOne({ email }).select('+password');
-    if (!user) {
-      return next({ status: 401, message: 'Неправильные почта или пароль' });
+
+    if (!user || !user.password) {
+      const error = new Error('Неправильные почта или пароль');
+      (error as any).status = 401;
+      throw error;
     }
 
-    // Проверяем пароль
-    const matched = await bcrypt.compare(password, user.password);
-    if (!matched) {
-      return next({ status: 401, message: 'Неправильные почта или пароль' });
+    const isPasswordCorrect = await bcrypt.compare(password, user.password);
+
+    if (!isPasswordCorrect) {
+      const error = new Error('Неправильные почта или пароль');
+      (error as any).status = 401;
+      throw error;
     }
 
-    // Генерируем JWT
-    const token = jwt.sign(
-      { _id: user._id },
-      NODE_ENV === 'production' ? JWT_SECRET : 'dev-secret',
-      { expiresIn: '7d' },
-    );
+    const secret = NODE_ENV === 'production' ? JWT_SECRET : 'dev-secret';
 
-    // Отправляем токен в httpOnly cookie
-    return res
-      .cookie('jwt', token, {
-        httpOnly: true,
-        maxAge: 7 * 24 * 60 * 60 * 1000, // неделя
-        sameSite: true,
-      })
-      .send({ token }); // Можно отправить токен также в теле ответа
+    const token = jwt.sign({ _id: user._id }, secret, { expiresIn: '7d' });
+
+    res.cookie('jwt', token, {
+      httpOnly: true,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      sameSite: true,
+    });
+
+    res.status(200).send({ token });
   } catch (err) {
-    return next(err);
+    next(err);
   }
 };
 
-export const getCurrentUser = async (req: Request, res: Response, next: NextFunction) => {
+export const getCurrentUser = async (req: ExpressRequest, res: Response, next: NextFunction) => {
   try {
-    const user = await User.findById(req.user?._id);
+    const user = await User.findById((req as any).user?._id);
     if (!user) {
-      return next({ status: 404, message: 'Пользователь не найден' });
+      const error = new Error('Пользователь не найден');
+      (error as any).status = 404;
+      throw error;
     }
-    return res.status(200).send(formatUser(user));
-  } catch (err: any) {
-    return next(err);
+    res.status(200).send(formatUser(user));
+  } catch (err) {
+    next(err);
   }
 };
