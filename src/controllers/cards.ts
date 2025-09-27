@@ -1,4 +1,4 @@
-import { Request as ExpressRequest, Response } from 'express';
+import { Request as ExpressRequest, Response, NextFunction } from 'express';
 import Card from '../models/card';
 import { IUser } from '../models/user';
 
@@ -8,7 +8,7 @@ declare module 'express-serve-static-core' {
   }
 }
 
-export const getCards = async (_req: ExpressRequest, res: Response) => {
+export const getCards = async (_req: ExpressRequest, res: Response, next: NextFunction) => {
   try {
     const cards = await Card.find({});
     const formattedCards = cards.map((card) => ({
@@ -19,13 +19,13 @@ export const getCards = async (_req: ExpressRequest, res: Response) => {
       createdAt: card.createdAt,
       _id: card._id,
     }));
-    res.status(200).send(formattedCards);
+    return res.status(200).send(formattedCards);
   } catch (err) {
-    res.status(500).send({ message: 'На сервере произошла ошибка' });
+    return next(err);
   }
 };
 
-export const createCard = async (req: ExpressRequest, res: Response) => {
+export const createCard = async (req: ExpressRequest, res: Response, next: NextFunction) => {
   try {
     const { name, link } = req.body;
     const owner = req.user?._id;
@@ -38,21 +38,22 @@ export const createCard = async (req: ExpressRequest, res: Response) => {
       createdAt: card.createdAt,
       _id: card._id,
     });
-  } catch (err: any) {
-    if (err.name === 'ValidationError') {
-      return res.status(400).send({ message: 'Переданы некорректные данные при создании карточки' });
-    }
-    return res.status(500).send({ message: 'На сервере произошла ошибка' });
+  } catch (err) {
+    return next(err);
   }
 };
 
-export const deleteCard = async (req: ExpressRequest, res: Response) => {
+export const deleteCard = async (req: ExpressRequest, res: Response, next: NextFunction) => {
   try {
     const { cardId } = req.params;
-    const card = await Card.findByIdAndDelete(cardId);
+    const card = await Card.findById(cardId);
     if (!card) {
       return res.status(404).send({ message: 'Карточка не найдена' });
     }
+    if (card.owner.toString() !== req.user?._id) {
+      return res.status(403).send({ message: 'Нет прав на удаление этой карточки' });
+    }
+    await card.deleteOne();
     return res.status(200).send({
       name: card.name,
       link: card.link,
@@ -61,15 +62,12 @@ export const deleteCard = async (req: ExpressRequest, res: Response) => {
       createdAt: card.createdAt,
       _id: card._id,
     });
-  } catch (err: any) {
-    if (err.name === 'CastError') {
-      return res.status(400).send({ message: 'Передан некорректный _id карточки' });
-    }
-    return res.status(500).send({ message: 'На сервере произошла ошибка' });
+  } catch (err) {
+    return next(err);
   }
 };
 
-export const likeCard = async (req: ExpressRequest, res: Response) => {
+export const likeCard = async (req: ExpressRequest, res: Response, next: NextFunction) => {
   try {
     const card = await Card.findByIdAndUpdate(
       req.params.cardId,
@@ -87,15 +85,12 @@ export const likeCard = async (req: ExpressRequest, res: Response) => {
       createdAt: card.createdAt,
       _id: card._id,
     });
-  } catch (err: any) {
-    if (err.name === 'CastError') {
-      return res.status(400).send({ message: 'Передан некорректный _id карточки' });
-    }
-    return res.status(500).send({ message: 'На сервере произошла ошибка' });
+  } catch (err) {
+    return next(err);
   }
 };
 
-export const dislikeCard = async (req: ExpressRequest, res: Response) => {
+export const dislikeCard = async (req: ExpressRequest, res: Response, next: NextFunction) => {
   try {
     const card = await Card.findByIdAndUpdate(
       req.params.cardId,
@@ -113,10 +108,7 @@ export const dislikeCard = async (req: ExpressRequest, res: Response) => {
       createdAt: card.createdAt,
       _id: card._id,
     });
-  } catch (err: any) {
-    if (err.name === 'CastError') {
-      return res.status(400).send({ message: 'Передан некорректный _id карточки' });
-    }
-    return res.status(500).send({ message: 'На сервере произошла ошибка' });
+  } catch (err) {
+    return next(err);
   }
 };
