@@ -41,21 +41,22 @@ app.use(auth); // авторизация для всех маршрутов ни
 
 app.use('/users', usersRouter);
 app.use('/cards', cardsRouter);
-app.use(errorHandler);
 
-app.get('/', (_req, res) => {
-  res.send('Сервер работает!');
-});
-
-app.use((err: any, _req: express.Request, _res: express.Response, _next: express.NextFunction) => {
+app.use((err: any, _req: express.Request, _res: express.Response, next: express.NextFunction) => {
   const errorLog = {
     time: new Date().toISOString(),
     message: err.message,
     stack: err.stack,
   };
   fs.appendFileSync('error.log', JSON.stringify(errorLog) + '\n');
-  _res.status(500).send({ message: 'На сервере произошла ошибка' });
+  next(err);
 });
+app.use(errorHandler);
+
+app.get('/', (_req, res) => {
+  res.send('Сервер работает!');
+});
+
 
 app.listen(PORT, () => {
   console.log(`Сервер запущен на http://localhost:${PORT}`);

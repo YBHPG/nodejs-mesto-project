@@ -2,6 +2,17 @@ import { Request as ExpressRequest, Response, NextFunction } from 'express';
 import Card from '../models/card';
 import { IUser } from '../models/user';
 
+const urlRegex = /^https?:\/\/(www\.)?[\w-]+\.[\w]{2,}([-._~:/?#[\]@!$&'()*+,;=/]*#?)?$/;
+
+class BadRequestError extends Error {
+  status: number;
+
+  constructor(message: string) {
+    super(message);
+    this.status = 400;
+  }
+}
+
 declare module 'express-serve-static-core' {
   interface Request {
     user?: IUser;
@@ -28,6 +39,12 @@ export const getCards = async (_req: ExpressRequest, res: Response, next: NextFu
 export const createCard = async (req: ExpressRequest, res: Response, next: NextFunction) => {
   try {
     const { name, link } = req.body;
+    if (typeof name !== 'string' || name.length < 2 || name.length > 30) {
+      throw new BadRequestError('Переданы некорректные данные при создании карточки');
+    }
+    if (typeof link !== 'string' || !urlRegex.test(link)) {
+      throw new BadRequestError('Переданы некорректные данные при создании карточки');
+    }
     const owner = req.user?._id;
     const card = await Card.create({ name, link, owner });
     return res.status(201).send({
@@ -38,7 +55,10 @@ export const createCard = async (req: ExpressRequest, res: Response, next: NextF
       createdAt: card.createdAt,
       _id: card._id,
     });
-  } catch (err) {
+  } catch (err: any) {
+    if (err.name === 'ValidationError') {
+      return next(new BadRequestError('Переданы некорректные данные при создании карточки'));
+    }
     return next(err);
   }
 };
@@ -48,10 +68,14 @@ export const deleteCard = async (req: ExpressRequest, res: Response, next: NextF
     const { cardId } = req.params;
     const card = await Card.findById(cardId);
     if (!card) {
-      return res.status(404).send({ message: 'Карточка не найдена' });
+      const error = new Error('Карточка не найдена');
+      (error as any).status = 404;
+      throw error;
     }
     if (card.owner.toString() !== req.user?._id) {
-      return res.status(403).send({ message: 'Нет прав на удаление этой карточки' });
+      const error = new Error('Нет прав на удаление этой карточки');
+      (error as any).status = 403;
+      throw error;
     }
     await card.deleteOne();
     return res.status(200).send({
@@ -75,7 +99,9 @@ export const likeCard = async (req: ExpressRequest, res: Response, next: NextFun
       { new: true },
     );
     if (!card) {
-      return res.status(404).send({ message: 'Карточка не найдена' });
+      const error = new Error('Карточка не найдена');
+      (error as any).status = 404;
+      throw error;
     }
     return res.status(200).send({
       name: card.name,
@@ -98,7 +124,9 @@ export const dislikeCard = async (req: ExpressRequest, res: Response, next: Next
       { new: true },
     );
     if (!card) {
-      return res.status(404).send({ message: 'Карточка не найдена' });
+      const error = new Error('Карточка не найдена');
+      (error as any).status = 404;
+      throw error;
     }
     return res.status(200).send({
       name: card.name,
